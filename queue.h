@@ -1,6 +1,5 @@
 #include <iostream>
 #include <queue>
-#include <time.h>
 
 #ifndef QUEUE_H
 #define QUEUE_H
@@ -9,6 +8,7 @@
 class Process {
   private: 
     int pid;
+    int exec_time; // Quanto do processo foi executado
     int burst; // Tempo de burst de CPU
     int io_op; // Número de operações de I/O
 
@@ -25,13 +25,7 @@ class Process {
     }
 
     int execute() {
-      time_t start, end; start = time(0);
-      while(true) {
-        if(time(0) - start == 1) {
-          std::cout << this->pid << ": Executing..." << std::endl;
-          start += 1;
-        }
-      }
+      std::cout << this->pid << ": Executing..." << std::endl;
     }
 
     void stop() {
@@ -41,16 +35,24 @@ class Process {
 
 class Queue {
   private:
-    std::queue<Process> q;
+    std::queue<Process*> q;
 
   public:
-    void push(Process p) {
+    void push(Process *p) {
       q.push(p);
     }
 
     void pop() {
       q.pop();
     }
+};
+
+class RoundRobin: public Queue {
+  private:
+    int quantum;
+
+  public:
+    RoundRobin(int quantum): quantum(quantum) {}
 };
 
 int Process::s_id = 0;
