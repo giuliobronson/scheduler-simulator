@@ -4,11 +4,13 @@
 #ifndef QUEUE_H
 #define QUEUE_H
 
+enum class State {Q0, Q1, Q2};
+
 
 class Process {
   private: 
     int pid;
-    int exec_time; // Quanto do processo foi executado
+    State state;
     int burst; // Tempo de burst de CPU
     int io_op; // Número de operações de I/O
 
@@ -18,32 +20,29 @@ class Process {
   public:
     Process(int burst, int io_op): burst(burst), io_op(io_op) {
       this->pid = ++s_id;
+      this->state = State::Q0;
     }
 
-    int getPID() {
-      return this->pid;
-    }
-
-    int execute() {
-      std::cout << this->pid << ": Executing..." << std::endl;
-    }
-
-    void stop() {
-
+    void execute() {
+      std::cout << "Process #" << this->pid << std::endl;
     }
 };
 
 class Queue {
   private:
-    std::queue<Process*> q;
+    std::queue<Process*> q; 
 
   public:
+    Process *front() {
+      return this->q.front();
+    }
+
     void push(Process *p) {
-      q.push(p);
+      this->q.push(p);
     }
 
     void pop() {
-      q.pop();
+      this->q.pop();
     }
 };
 

@@ -1,5 +1,5 @@
 #include <thread>
-#include <mutex>
+#include <chrono>
 #include <condition_variable>
 #include "queue.h"
 
@@ -8,19 +8,44 @@
 
 class Scheduler {
   private:
-    std::condition_variable cv;
+    Process *front;
     RoundRobin *rr1, *rr2;
     Queue *fcfs;
+    bool idle;
+    std::mutex mutex;
+    std::condition_variable cv;
 
   public:
-    Scheduler(RoundRobin *rr1, RoundRobin *rr2, Queue *fcfs): rr1(rr1), rr2(rr2), fcfs(fcfs) {}
+    Scheduler(RoundRobin *rr1, RoundRobin *rr2, Queue *fcfs) : front(nullptr), rr1(rr1), rr2(rr2),
+                                                               fcfs(fcfs), idle(true) {}
 
-    void request_cpu_time(Process *p) {
-      this->rr1->push(p);
+    void request_cpu(Process *p) {
+      std::unique_lock<std::mutex> lock(mutex);
+      enqueue(p);
+      schedule();
+      while (!this->idle && p != front) cv.wait(lock);
+      this->idle = false;
+      front->execute();
     }
 
-    void release_cpu_time() {
+    void release_cpu() {
+      std::unique_lock<std::mutex> lock(mutex);
+      this->idle = true;
+      cv.notify_all();
+      dequeue();
+      schedule();
+    }
 
+    void schedule() {
+    }
+
+    void enqueue(Process *p) {
+    }
+
+    void dequeue() {
+    }
+
+    void preempt() {
     }
 };
 
