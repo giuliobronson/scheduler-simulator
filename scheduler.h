@@ -56,64 +56,9 @@ public:
 
 int Process::s_id = 0;
 
-class Queue {
-public:
-   virtual Process front() = 0;
-
-   virtual void push(const Process& p) = 0;
-
-   virtual void pop() = 0;
-
-   virtual bool empty() = 0;
-};
-
-class RoundRobin : public Queue {
-private:
-   std::queue<Process> q;
-
-public:
-   Process front() {
-      return q.front();
-   }
-
-   void push(const Process& p) {
-      q.push(p);
-   }
-
-   void pop() {
-      q.pop();
-   }
-
-   bool empty() {
-      return q.empty();
-   }
-};
-
-class FCFS : public Queue {
-private:
-   std::priority_queue<Process> pq;
-
-public:
-   Process front() {
-      return pq.top();
-   }
-
-   void push(const Process& p) {
-      pq.push(p);
-   }
-
-   void pop() {
-      pq.pop();
-   }
-
-   bool empty() {
-      return pq.empty();
-   }
-};
-
 class Scheduler {
 private:
-   std::vector<Queue*> queues;
+   std::vector<std::queue<Process>*> queues;
    Process *front, *curr;
    bool idle;
    std::mutex mutex;
@@ -121,9 +66,9 @@ private:
 
 public:
    Scheduler() : idle(true) {
-      queues.push_back(new RoundRobin());
-      queues.push_back(new RoundRobin());
-      queues.push_back(new FCFS());
+      queues.push_back(new std::queue<Process>);
+      queues.push_back(new std::queue<Process>);
+      queues.push_back(new std::queue<Process>);
    }
 
    void request_cpu(Process* p) {
