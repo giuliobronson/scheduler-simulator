@@ -20,6 +20,7 @@ private:
 
 protected:
    static int s_id;
+   static int clock;
 
 public:
    Process(Scheduler* s, int burst, int io_op) : s(s), burst(burst), io_op(io_op), priority(0), 
@@ -55,6 +56,7 @@ public:
 };
 
 int Process::s_id = 0;
+int Process::clock = 0;
 
 class Scheduler {
 private:
@@ -65,7 +67,7 @@ private:
    std::condition_variable cv;
 
 public:
-   Scheduler() : idle(true) {
+   Scheduler() : front(nullptr), curr(nullptr), idle(true) {
       queues.push_back(new std::queue<Process>);
       queues.push_back(new std::queue<Process>);
       queues.push_back(new std::queue<Process>);
@@ -75,7 +77,7 @@ public:
       std::unique_lock<std::mutex> lock(mutex);
       enqueue_process(p);
       schedule_process();
-      while(!idle && p->getPID() != front->getPID()) // TODO: Verificar o que o Cuadros disse
+      while(!idle && p->getPID() != front->getPID()) // TODO: Verificar condição do while
          cv.wait(lock);
       curr = p; curr->toggleState();
       idle = false;
@@ -121,13 +123,12 @@ public:
 
 void Process::operator()() {
    s->request_cpu(this);
-   // Executa sua tarefa
-   time_t start = time(0);
-   int dt = time(0) - start;
-   while (dt < burst && state) {
-      std::cout << "Process #" << pid << " executing at time " << dt << std::endl;
+   std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
+   time_t start = time(0); int dt = 0;
+   while(dt < burst && state) 
       dt = time(0) - start;
-   }
+   clock += dt;
+   std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
    s->release_cpu();
 }
 
