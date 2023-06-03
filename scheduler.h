@@ -130,7 +130,7 @@ public:
       std::unique_lock<std::mutex> lock(mutex);
       enqueue_process(p);
       schedule_process();
-      while(!idle && p->getPID() != front->getPID()) 
+      while(!idle && p->getPID() != front->getPID()) // TODO: Verificar o que o Cuadros disse
          cv.wait(lock);
       curr = p; curr->toggleState();
       idle = false;
@@ -138,7 +138,6 @@ public:
    
    void release_cpu() {
       std::unique_lock<std::mutex> lock(mutex);
-      std::cout << 1;
       curr->toggleState();
       dequeue_process();
       schedule_process();
@@ -157,7 +156,6 @@ public:
       if(!front || !curr) return;
       if(front->getPID() != curr->getPID() && curr->getState()) {
          preempt();
-         curr = front;
       }
    }
 
@@ -166,20 +164,19 @@ public:
    }   
    
    void dequeue_process() {
-      queues[curr->getPriority()]->pop();
+      queues[curr->getPriority()]->pop(); // TODO: Adicionar lógica para colocar na fila de I/O
       curr->changePriority();
    }
    
    void preempt() {
       curr->toggleState();
       idle = true;
-      request_cpu(curr);
-      cv.notify_all();
    }
 };
 
 void Process::operator()() {
    s->request_cpu(this);
+   // Executa sua tarefa
    time_t start = time(0);
    int dt = time(0) - start;
    while (dt < burst && state) {
