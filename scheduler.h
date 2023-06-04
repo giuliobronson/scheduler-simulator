@@ -48,10 +48,6 @@ public:
       return this->state;
    }
 
-   bool operator<(const Process& other) const {
-      return priority < other.priority;
-   }
-
    void operator()();
 };
 
@@ -73,14 +69,14 @@ public:
       queues.push_back(new std::queue<Process>);
    }
 
-   void request_cpu(Process* p) {
+   void request_cpu(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
       enqueue_process(p);
       schedule_process();
-      while(!idle && p->getPID() != front->getPID()) // TODO: Verificar condição do while
+      while(!idle || p.getPID() != front->getPID()) 
          cv.wait(lock);
-      curr = p; curr->toggleState();
-      idle = false;
+      curr = &p; curr->toggleState(); 
+      idle = false; 
    }
    
    void release_cpu() {
@@ -95,19 +91,18 @@ public:
    void schedule_process() {
       for(auto queue : queues) {
          if(!queue->empty()) {
-            Process p = queue->front();
+            Process& p = queue->front();
             front = &p;
             break;
          }
       }
       if(!front || !curr) return;
-      if(front->getPID() != curr->getPID() && curr->getState()) {
-         preempt();
-      }
+      if(front->getPID() != curr->getPID() && curr->getState()) 
+         curr->toggleState();
    }
 
-   void enqueue_process(Process* p) {
-      queues[p->getPriority()]->push(*p);
+   void enqueue_process(Process& p) {
+      queues[p.getPriority()]->push(p);
    }   
    
    void dequeue_process() {
@@ -116,20 +111,22 @@ public:
    }
    
    void preempt() {
-      curr->toggleState();
+      std::unique_lock<std::mutex> lock(mutex);
       idle = true;
+      cv.notify_all();
    }
 };
 
 void Process::operator()() {
-   s->request_cpu(this);
+   s->request_cpu(*this);
    std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
    time_t start = time(0); int dt = 0;
    while(dt < burst && state) 
       dt = time(0) - start;
    clock += dt;
    std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
-   s->release_cpu();
+   if(state) s->release_cpu();
+   else s->preempt();
 }
 
 #endif
