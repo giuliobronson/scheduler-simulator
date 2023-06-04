@@ -125,7 +125,7 @@ void Process::operator()() {
    while(true) {
       std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
       time_t start = time(0); int dt = 0;
-      while(dt < burst && state) 
+      while(dt < burst && state) // TODO: Mudar para time_slice
          dt = time(0) - start;
       clock += dt;
       std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
