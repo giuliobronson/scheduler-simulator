@@ -83,7 +83,7 @@ public:
       std::unique_lock<std::mutex> lock(mutex);
       curr->toggleState();
       dequeue_process();
-      schedule_process();
+      schedule_process(); 
       idle = true;
       cv.notify_all();
    }
@@ -110,10 +110,13 @@ public:
       curr->changePriority();
    }
    
-   void preempt() {
+   void preempt(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
       idle = true;
-      cv.notify_all();
+      while(!idle || p.getPID() != front->getPID()) 
+         cv.wait(lock);
+      curr = &p; curr->toggleState(); 
+      idle = false; 
    }
 };
 
@@ -126,7 +129,7 @@ void Process::operator()() {
    clock += dt;
    std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
    if(state) s->release_cpu();
-   else s->preempt();
+   else s->preempt(*this);
 }
 
 #endif
