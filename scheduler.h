@@ -20,6 +20,7 @@ private:
 
 protected:
    static int s_id;
+   static int clock;
 
 public:
    Process(Scheduler* s, int burst, int io_op) : s(s), burst(burst), io_op(io_op), priority(0), 
@@ -47,100 +48,42 @@ public:
       return this->state;
    }
 
-   bool operator<(const Process& other) const {
-      return priority < other.priority;
-   }
-
    void operator()();
 };
 
 int Process::s_id = 0;
-
-class Queue {
-public:
-   virtual Process front() = 0;
-
-   virtual void push(const Process& p) = 0;
-
-   virtual void pop() = 0;
-
-   virtual bool empty() = 0;
-};
-
-class RoundRobin : public Queue {
-private:
-   std::queue<Process> q;
-
-public:
-   Process front() {
-      return q.front();
-   }
-
-   void push(const Process& p) {
-      q.push(p);
-   }
-
-   void pop() {
-      q.pop();
-   }
-
-   bool empty() {
-      return q.empty();
-   }
-};
-
-class FCFS : public Queue {
-private:
-   std::priority_queue<Process> pq;
-
-public:
-   Process front() {
-      return pq.top();
-   }
-
-   void push(const Process& p) {
-      pq.push(p);
-   }
-
-   void pop() {
-      pq.pop();
-   }
-
-   bool empty() {
-      return pq.empty();
-   }
-};
+int Process::clock = 0;
 
 class Scheduler {
 private:
-   std::vector<Queue*> queues;
+   std::vector<std::queue<Process>*> queues;
    Process *front, *curr;
    bool idle;
    std::mutex mutex;
    std::condition_variable cv;
 
 public:
-   Scheduler() : idle(true) {
-      queues.push_back(new RoundRobin());
-      queues.push_back(new RoundRobin());
-      queues.push_back(new FCFS());
+   Scheduler() : front(nullptr), curr(nullptr), idle(true) {
+      queues.push_back(new std::queue<Process>);
+      queues.push_back(new std::queue<Process>);
+      queues.push_back(new std::queue<Process>);
    }
 
-   void request_cpu(Process* p) {
+   void request_cpu(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
       enqueue_process(p);
       schedule_process();
-      while(!idle && p->getPID() != front->getPID()) // TODO: Verificar o que o Cuadros disse
+      while(!idle || p.getPID() != front->getPID()) 
          cv.wait(lock);
-      curr = p; curr->toggleState();
-      idle = false;
+      curr = &p; curr->toggleState(); 
+      idle = false; 
    }
    
    void release_cpu() {
       std::unique_lock<std::mutex> lock(mutex);
       curr->toggleState();
       dequeue_process();
-      schedule_process();
+      schedule_process(); 
       idle = true;
       cv.notify_all();
    }
@@ -148,19 +91,18 @@ public:
    void schedule_process() {
       for(auto queue : queues) {
          if(!queue->empty()) {
-            Process p = queue->front();
+            Process& p = queue->front();
             front = &p;
             break;
          }
       }
       if(!front || !curr) return;
-      if(front->getPID() != curr->getPID() && curr->getState()) {
-         preempt();
-      }
+      if(front->getPID() != curr->getPID() && curr->getState()) 
+         curr->toggleState();
    }
 
-   void enqueue_process(Process* p) {
-      queues[p->getPriority()]->push(*p);
+   void enqueue_process(Process& p) {
+      queues[p.getPriority()]->push(p);
    }   
    
    void dequeue_process() {
@@ -168,20 +110,27 @@ public:
       curr->changePriority();
    }
    
-   void preempt() {
-      curr->toggleState();
+   void preempt(Process& p) {
+      std::unique_lock<std::mutex> lock(mutex);
       idle = true;
+      while(!idle || p.getPID() != front->getPID()) 
+         cv.wait(lock);
+      curr = &p; curr->toggleState(); 
+      idle = false; 
    }
 };
 
 void Process::operator()() {
-   s->request_cpu(this);
-   // Executa sua tarefa
-   time_t start = time(0);
-   int dt = time(0) - start;
-   while (dt < burst && state) {
-      std::cout << "Process #" << pid << " executing at time " << dt << std::endl;
-      dt = time(0) - start;
+   s->request_cpu(*this);
+   while(true) {
+      std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
+      time_t start = time(0); int dt = 0;
+      while(dt < burst && state) // TODO: Mudar para time_slice
+         dt = time(0) - start;
+      clock += dt;
+      std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
+      if(state) break;
+      s->preempt(*this);
    }
    s->release_cpu();
 }
