@@ -122,14 +122,17 @@ public:
 
 void Process::operator()() {
    s->request_cpu(*this);
-   std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
-   time_t start = time(0); int dt = 0;
-   while(dt < burst && state) 
-      dt = time(0) - start;
-   clock += dt;
-   std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
-   if(state) s->release_cpu();
-   else s->preempt(*this);
+   while(true) {
+      std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
+      time_t start = time(0); int dt = 0;
+      while(dt < burst && state) 
+         dt = time(0) - start;
+      clock += dt;
+      std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
+      if(state) break;
+      s->preempt(*this);
+   }
+   s->release_cpu();
 }
 
 #endif
