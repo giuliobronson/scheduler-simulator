@@ -18,8 +18,54 @@ tempo.
 
 A entrada consiste no número total de processos na fila, a duração do surto de CPU de cada processo e o número de operações de E/S de cada processo:
 
-|**Entrada** | **Saída** |
-|:-----------|:---------:|
-|2           |           |  
-|40 1        |  *Gantt*  |
-|15 2        |           | 
+<table>
+<thead>
+	<tr>
+		<th>Entrada</th>
+		<th>Saída</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+		<td>2<br>40 1<br>15 2</td>
+		<td>
+         Process #0 started execution at time 0<br>
+         Process #0 ended execution at time   10<br>
+         Process #1 started execution at time 10<br>
+         Process #1 ended execution at time   20<br>
+         Process #0 started execution at time 20<br>
+         Process #0 ended execution at time   35<br>
+         Process #1 started execution at time 35<br>
+         Process #1 ended execution at time   40<br>
+         Process #1 request I/O<br>
+         Process #0 started execution at time 40<br>
+         Process #0 ended execution at time   55<br>
+         Process #1 release I/O<br>
+         Process #1 started execution at time 60<br>
+         Process #0 request I/O<br>
+         Process #1 ended execution at time   70<br>
+         Process #1 started execution at time 70<br>
+         Process #1 ended execution at time   75<br>
+         Process #0 release I/O<br>
+         Process #0 started execution at time 80<br>
+         Process #1 request I/O<br>
+         Process #0 ended execution at time   90<br>
+         Process #0 started execution at time 90<br>
+         Process #1 release I/O<br>
+         Process #0 ended execution at time   100<br>
+         Process #1 started execution at time 100<br>
+         Process #1 ended execution at time   110<br>
+         Process #0 started execution at time 110<br>
+         Process #0 ended execution at time   115<br>
+         Process #1 started execution at time 115<br>
+         Process #1 ended execution at time   120<br>
+         Process #1 request I/O<br>
+         Process #0 started execution at time 120<br>
+         Process #0 ended execution at time   135<br>
+         Process #1 release I/O<br>
+         Process #0 request I/O<br>
+         Process #0 release I/O
+      </td>
+	</tr>
+</tbody>
+</table>
