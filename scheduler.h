@@ -132,6 +132,10 @@ public:
    }
 };
 
+/*
+* Classe Scheduler que representa o escalonador de 
+* processos. Utiliza três filas com realimentação
+*/
 class Scheduler {
 private:
    std::vector<std::queue<Process>*> queues; // Filas do escalonador
