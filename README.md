@@ -34,37 +34,7 @@ A entrada consiste no número total de processos na fila, a duração do surto d
          Process #1 started execution at time 10<br>
          Process #1 ended execution at time   20<br>
          Process #0 started execution at time 20<br>
-         Process #0 ended execution at time   35<br>
-         Process #1 started execution at time 35<br>
-         Process #1 ended execution at time   40<br>
-         Process #1 request I/O<br>
-         Process #0 started execution at time 40<br>
-         Process #0 ended execution at time   55<br>
-         Process #1 release I/O<br>
-         Process #1 started execution at time 60<br>
-         Process #0 request I/O<br>
-         Process #1 ended execution at time   70<br>
-         Process #1 started execution at time 70<br>
-         Process #1 ended execution at time   75<br>
-         Process #0 release I/O<br>
-         Process #0 started execution at time 80<br>
-         Process #1 request I/O<br>
-         Process #0 ended execution at time   90<br>
-         Process #0 started execution at time 90<br>
-         Process #1 release I/O<br>
-         Process #0 ended execution at time   100<br>
-         Process #1 started execution at time 100<br>
-         Process #1 ended execution at time   110<br>
-         Process #0 started execution at time 110<br>
-         Process #0 ended execution at time   115<br>
-         Process #1 started execution at time 115<br>
-         Process #1 ended execution at time   120<br>
-         Process #1 request I/O<br>
-         Process #0 started execution at time 120<br>
-         Process #0 ended execution at time   135<br>
-         Process #1 release I/O<br>
-         Process #0 request I/O<br>
-         Process #0 release I/O
+         ...
       </td>
 	</tr>
 </tbody>
