@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <iostream>
 #include <limits>
+#include <thread>
+#include <algorithm>
 
 class Scheduler;
 
@@ -22,12 +24,11 @@ private:
 
 protected:
    static int s_id;
-   static int clock;
 
 public:
    Process(Scheduler* s, int burst, int io_op) : s(s), burst(burst), io_op(io_op), priority(0), 
    state(false), total_cpu_time(0) {
-      this->pid = ++s_id;
+      this->pid = s_id++;
    }
 
    int getPID() {
@@ -86,29 +87,82 @@ public:
 };
 
 int Process::s_id = 0;
-int Process::clock = 0;
+
+class IODevice {
+private:
+std::queue<Process> queue;
+bool idleIO;
+std::mutex mutexIO;
+std::condition_variable cvIO;
+Process *frontIO;
+
+public:
+IODevice(): frontIO(nullptr), idleIO(true) {}
+void request_io(Process& p) {
+      std::unique_lock<std::mutex> lock(mutexIO);
+      queue.push(p);
+      Process& pAux = queue.front();
+      frontIO = &pAux;
+      while(!idleIO || p.getPID() != frontIO->getPID()) 
+         cvIO.wait(lock);
+      idleIO = false;
+      exec_io_op(p);
+   }
+
+   void exec_io_op(Process& p) {
+      time_t start = time(0)*1000;
+      int dt = 0;
+      std::cout <<"I/O #P" << p.getPID() << " " << "Start of IO operation" << std::endl;
+      while(dt < 20)
+        dt = time(0)*1000 - start;
+      std::cout <<"I/O #P" << p.getPID() << " " << "End of IO operation"  << std::endl;
+      release_io(p);
+   }
+   
+   void release_io(Process& p) {
+      queue.pop(); 
+      p.decrementIOOP();
+      p.changePriority();
+      Process& pAux = queue.front();
+      frontIO = &pAux;
+      idleIO = true;
+      cvIO.notify_all();
+   }
+
+};
 
 class Scheduler {
 private:
    std::vector<std::queue<Process>*> queues;
-   Process *frontCPU, *currCPU, *frontIO, *currIO;
+   IODevice *deviceIO;
+   Process *frontCPU, *currCPU;
    bool idleCPU, idleIO;
-   std::mutex mutexCPU, mutexIO;
-   std::condition_variable cvCPU, cvIO;
+   std::mutex mutexCPU;
+   std::condition_variable cvCPU;
    int quantumList[3];
+
+   protected:
+   static time_t start_clock;
 
 public:
    Scheduler(int firstQuantum, int secondQuantum) : frontCPU(nullptr), currCPU(nullptr), 
-    idleCPU(true), frontIO(nullptr), currIO(nullptr), idleIO(true) {
+    idleCPU(true) {
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=10)
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=15)
       queues.push_back(new std::queue<Process>); // FCFS
-      queues.push_back(new std::queue<Process>); // IO Device (exec_time = 20)
       int infin = std::numeric_limits<int>::max();
       quantumList[0] = firstQuantum;
       quantumList[1] = secondQuantum;
       quantumList[2] = infin;
-      
+      deviceIO = new IODevice;
+   }
+
+   IODevice* getDeviceIO() {
+    return deviceIO;
+   }
+
+   int getClock() {
+      return time(0)*1000 - start_clock;
    }
 
    void request_cpu(Process& p) {
@@ -129,25 +183,6 @@ public:
       idleCPU = true;
       cvCPU.notify_all();
    }
-
-   void request_io(Process& p) {
-      std::unique_lock<std::mutex> lock(mutexIO);
-      enqueue_process(p);
-      schedule_io_op();
-      while(!idleIO || p.getPID() != frontIO->getPID()) 
-         cvIO.wait(lock);
-      currIO = &p; 
-      idleIO = false; 
-   }
-   
-   void release_io(Process& p) {
-      std::unique_lock<std::mutex> lock(mutexIO);
-      currIO->decrementIOOP();
-      dequeue_process(p);
-      schedule_io_op(); 
-      idleIO = true;
-      cvIO.notify_all();
-   }
    
    void schedule_process() {
       for(auto queue : queues) {
@@ -160,13 +195,6 @@ public:
       if(!frontCPU || !currCPU) return;
       if(frontCPU->getPID() != currCPU->getPID() && currCPU->getState()) 
          currCPU->toggleState();
-   }
-
-   void schedule_io_op() {
-      if(!queues[3]->empty()) {
-        Process& p = queues[3]->front();
-        frontIO = &p;
-      }
    }
 
    void enqueue_process(Process& p) {
@@ -201,47 +229,40 @@ public:
    }
 };
 
+time_t Scheduler::start_clock = time(0)*1000;
+
+
 int Process::getTimeSlice() {
     int timeSlice;
     int quantum = s->getQuantum(priority);
-    timeSlice = burst > quantum ? quantum : burst;
+    timeSlice = std::min(quantum, burst-total_cpu_time);
     return timeSlice;
    }
 
 void Process::operator()() {
    s->request_cpu(*this);
-   int timeSlice = getTimeSlice();
    while(true) {
-      std::cout << "CPU #P" << pid << " started execution at time " << clock <<  std::endl;
-      time_t start = time(0); int dt = 0;
+      int timeSlice = getTimeSlice();
+      std::cout << "CPU #P" << pid << " started execution at time " << s->getClock() <<  std::endl;
+      time_t start = time(0)*1000; int dt = 0;
       while(dt < timeSlice && state) {
-         dt = time(0) - start;
+         dt = time(0)*1000 - start;
       }
       total_cpu_time += dt;
-      clock += dt;
-      std::cout << "CPU #P" << pid << " ended execution at time " << clock << std::endl;
+      std::cout << "CPU #P" << pid << " ended execution at time " << s->getClock() << std::endl;
       if(!state)
         s->preempt(*this);
       else
         s->release_cpu(*this);
-      if(priority == 3) io_operation();
+      if(priority == 3) {
+        IODevice *aux = s->getDeviceIO();
+        aux->request_io(*this);
+      }
 
       if(priority != -1)
         s->request_cpu(*this);
       else break;
    }
-}
-
-void Process::io_operation() {
-   s->request_io(*this);
-      time_t start = time(0); int dt = 0;
-      std::cout <<"I/O #P" << pid << " " << "Start of IO operation" << std::endl;
-      while(dt < 20) {
-        dt = time(0) - start;
-      }
-        std::cout <<"I/O #P" << pid << " " << "End of IO operation"  << std::endl;
-      clock += dt;
-      s->release_io(*this);
 }
 
 #endif
