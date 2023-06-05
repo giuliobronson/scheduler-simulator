@@ -4,8 +4,20 @@
 #include <vector>
 #include <queue>
 #include <mutex>
+#include <algorithm>
 #include <condition_variable>
+#include <limits>
+#include <chrono>
 #include <iostream>
+
+long long getCurrentTime() {
+    auto current_time = std::chrono::system_clock::now();
+    auto duration = current_time.time_since_epoch();
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+    return milliseconds.count() / 100;
+}
+
+const int inf = std::numeric_limits<int>::max();
 
 class Scheduler;
 
@@ -15,17 +27,19 @@ private:
    int pid;
    int priority;
    bool state;
+   int exec_time, remainder;
+   int time_slice;
    int burst;
    int io_op; 
 
 protected:
    static int s_id;
-   static int clock;
 
 public:
-   Process(Scheduler* s, int burst, int io_op) : s(s), burst(burst), io_op(io_op), priority(0), 
-   state(false) {
-      this->pid = ++s_id;
+   Process(Scheduler* s, int burst, int io_op) : s(s), priority(0), state(false), remainder(burst),   
+    time_slice(0), burst(burst), io_op(io_op) {
+      this->pid = s_id++;
+      this->exec_time = (this->io_op + 1) * this->burst;
    }
 
    int getPID() {
@@ -33,6 +47,7 @@ public:
    }
 
    void changePriority() {
+      if(this->remainder <= 0) this->priority = -1;
       this->priority = (this->priority + 1) % 3;
    }
    
@@ -48,47 +63,108 @@ public:
       return this->state;
    }
 
+   void setTimeSlice(int quantum) {
+      if(this->remainder == 0) this->remainder = burst;
+      this->time_slice = std::min(quantum, this->remainder);
+   }
+
+   int getBurstTime() {
+      return this->remainder;
+   }
+
+   int getExecTime() {
+      return this->exec_time;
+   }
+
+   void consumeTime(int time) {
+      this->remainder -= time;
+      this->exec_time -= time;
+   }
+
    void operator()();
 };
 
 int Process::s_id = 0;
-int Process::clock = 0;
 
-class Scheduler {
+class IODevice {
 private:
-   std::vector<std::queue<Process>*> queues;
-   Process *front, *curr;
+   const int io_time = 20;
+   std::queue<Process> processes;
+   Process *front;
    bool idle;
    std::mutex mutex;
    std::condition_variable cv;
 
 public:
+   IODevice() : front(nullptr), idle(true) {};
+
+   void requestIO(Process& p) {
+      std::unique_lock<std::mutex> lock(mutex);
+      processes.push(p);
+      Process& tmp = processes.front();
+      front = &tmp;
+      while(!idle || p.getPID() != front->getPID()) 
+         cv.wait(lock);
+      processes.pop();
+      tmp = processes.front();
+      front = &tmp;
+      idle = false;  
+
+      // Executa tarefa
+      std::cout << "Process #" << p.getPID() << " request I/O" <<  std::endl;
+      long long start = getCurrentTime(); long long dt = 0;
+      while(dt < io_time) 
+         dt = getCurrentTime() - start;
+      std::cout << "Process #" << p.getPID() << " release I/O" <<  std::endl;
+
+      // Libera fila de I/O
+      idle = true;
+      cv.notify_all();
+   }
+};
+
+class Scheduler {
+private:
+   std::vector<std::queue<Process>*> queues;
+   IODevice *io;
+   Process *front, *curr;
+   std::mutex mutex;
+   std::condition_variable cv;
+   int quantum[3] = { 10, 15, inf };
+   bool idle;
+
+protected:
+   static long long clock;
+
+public:
    Scheduler() : front(nullptr), curr(nullptr), idle(true) {
+      io = new IODevice();
       queues.push_back(new std::queue<Process>);
       queues.push_back(new std::queue<Process>);
       queues.push_back(new std::queue<Process>);
    }
 
-   void request_cpu(Process& p) {
+   void requestCPU(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
-      enqueue_process(p);
-      schedule_process();
+      enqueueProcess(p);
+      scheduleProcess();
       while(!idle || p.getPID() != front->getPID()) 
          cv.wait(lock);
       curr = &p; curr->toggleState(); 
       idle = false; 
    }
    
-   void release_cpu() {
+   void releaseCPU() {
       std::unique_lock<std::mutex> lock(mutex);
+      Process& p = *curr;
       curr->toggleState();
-      dequeue_process();
-      schedule_process(); 
+      dequeueProcess();
+      scheduleProcess(); 
       idle = true;
       cv.notify_all();
    }
    
-   void schedule_process() {
+   void scheduleProcess() {
       for(auto queue : queues) {
          if(!queue->empty()) {
             Process& p = queue->front();
@@ -101,11 +177,12 @@ public:
          curr->toggleState();
    }
 
-   void enqueue_process(Process& p) {
+   void enqueueProcess(Process& p) {
       queues[p.getPriority()]->push(p);
+      p.setTimeSlice(quantum[p.getPriority()]);
    }   
    
-   void dequeue_process() {
+   void dequeueProcess() {
       queues[curr->getPriority()]->pop(); // TODO: Adicionar lógica para colocar na fila de I/O
       curr->changePriority();
    }
@@ -113,26 +190,46 @@ public:
    void preempt(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
       idle = true;
-      while(!idle || p.getPID() != front->getPID()) 
+      cv.notify_all();
+      while(!idle || p.getPID() != front->getPID())
          cv.wait(lock);
       curr = &p; curr->toggleState(); 
       idle = false; 
    }
+
+   void startClock() {
+      this->clock = getCurrentTime();
+   }
+
+   long long getClock() {
+      return getCurrentTime() - clock;
+   }
+
+   IODevice* getIODevice() {
+      return io;
+   }
 };
 
+long long Scheduler::clock = getCurrentTime();
+
 void Process::operator()() {
-   s->request_cpu(*this);
+   s->requestCPU(*this);
    while(true) {
-      std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
-      time_t start = time(0); int dt = 0;
-      while(dt < burst && state) // TODO: Mudar para time_slice
-         dt = time(0) - start;
-      clock += dt;
-      std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
+      std::cout << "Process #" << pid << " started execution at time " << s->getClock() <<  std::endl;
+      long long start = getCurrentTime(); long long dt = 0;
+      while(dt < time_slice && state) 
+         dt = getCurrentTime() - start;
+      consumeTime(dt);
+      std::cout << "Process #" << pid << " ended execution at time   " << s->getClock() << std::endl;
       if(state) break;
       s->preempt(*this);
    }
-   s->release_cpu();
+   s->releaseCPU();
+   if(this->getBurstTime() <= 0) {
+      IODevice *io = s->getIODevice();
+      io->requestIO(*this);
+   }
+   if(exec_time > 0) (*this)();
 }
 
 #endif
