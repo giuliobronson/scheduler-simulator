@@ -14,7 +14,7 @@ long long getCurrentTime() {
     auto current_time = std::chrono::system_clock::now();
     auto duration = current_time.time_since_epoch();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
-    return milliseconds.count() / 100;
+    return milliseconds.count() / 10;
 }
 
 const int inf = std::numeric_limits<int>::max();
@@ -112,7 +112,7 @@ public:
 
       // Executa tarefa
       std::cout << "Process #" << p.getPID() << " request I/O" <<  std::endl;
-      long long start = getCurrentTime(); long long dt = 0;
+      long long start = getCurrentTime(); long long dt = 1;
       while(dt < io_time) 
          dt = getCurrentTime() - start;
       std::cout << "Process #" << p.getPID() << " release I/O" <<  std::endl;
@@ -216,7 +216,7 @@ void Process::operator()() {
    s->requestCPU(*this);
    while(true) {
       std::cout << "Process #" << pid << " started execution at time " << s->getClock() <<  std::endl;
-      long long start = getCurrentTime(); long long dt = 0;
+      long long start = getCurrentTime(); long long dt = 1;
       while(dt < time_slice && state) 
          dt = getCurrentTime() - start;
       consumeTime(dt);
@@ -226,7 +226,7 @@ void Process::operator()() {
       s->preempt(*this);
    }
    s->releaseCPU();
-   if(this->getBurstTime() <= 0) {
+   if(this->getBurstTime() <= 0 && exec_time > 0) {
       IODevice *io = s->getIODevice();
       io->requestIO(*this);
    }
