@@ -15,6 +15,7 @@ int main() {
       processes.push_back(Process(s, burst, io_op));
    } 
 
+   s->startClock();
    for (auto& process : processes) {
       threads.push_back(std::thread(process));
    }
