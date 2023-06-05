@@ -18,7 +18,7 @@ private:
    int priority;
    bool state;
    int io_op; 
-   int total_time;
+   int total_cpu_time;
 
 protected:
    static int s_id;
@@ -26,7 +26,7 @@ protected:
 
 public:
    Process(Scheduler* s, int burst, int io_op) : s(s), burst(burst), io_op(io_op), priority(0), 
-   state(false), total_time(0) {
+   state(false), total_cpu_time(0) {
       this->pid = ++s_id;
    }
 
@@ -41,27 +41,48 @@ public:
    void sendToIO() {
       this->priority = 3;
    }
-   
+
+   void setEndPriority() {
+      this->priority = -1;
+   }
+
    int getPriority() {
       return this->priority;
    }
 
-   int getTimeSlice() {
-    int timeSlice;
-    int quantum = s->getQuantum(priority);
-    timeSlice = burst > quantum ? quantum : burst;
-    return timeSlice;
+   int getTotalTime() {
+    return total_cpu_time;
+   }
+
+   int getBurst() {
+    return burst;
+   }
+
+   int getIOOp() {
+    return io_op;
    }
    
    void toggleState() {
       this->state = !this->state;
+   }
+
+   void setTotalTime(int time) {
+      this->total_cpu_time = time;
+   }
+
+   void decrementIOOP() {
+      this->io_op--;
    }
    
    bool getState() {
       return this->state;
    }
 
+   int getTimeSlice();
+
    void operator()();
+
+   void io_operation();
 };
 
 int Process::s_id = 0;
@@ -70,38 +91,63 @@ int Process::clock = 0;
 class Scheduler {
 private:
    std::vector<std::queue<Process>*> queues;
-   Process *front, *curr;
-   bool idle;
+   Process *frontCPU, *currCPU, *frontIO, *currIO;
+   bool idleCPU, idleIO;
    std::mutex mutex;
    std::condition_variable cv;
    int quantumList[3];
 
 public:
-   Scheduler(int firstQuantum, int secondQuantum) : front(nullptr), curr(nullptr), idle(true) {
+   Scheduler(int firstQuantum, int secondQuantum) : frontCPU(nullptr), currCPU(nullptr), 
+    idleCPU(true), frontIO(nullptr), currIO(nullptr), idleIO(true) {
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=10)
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=15)
       queues.push_back(new std::queue<Process>); // FCFS
       queues.push_back(new std::queue<Process>); // IO Device (exec_time = 20)
       int infin = std::numeric_limits<int>::max();
-      quantumList[3] = (firstQuantum, secondQuantum, infin);
+      quantumList[0] = firstQuantum;
+      quantumList[1] = secondQuantum;
+      quantumList[2] = infin;
+      
    }
 
    void request_cpu(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
       enqueue_process(p);
       schedule_process();
-      while(!idle || p.getPID() != front->getPID()) 
+      while(!idleCPU || p.getPID() != frontCPU->getPID()) 
          cv.wait(lock);
-      curr = &p; curr->toggleState(); 
-      idle = false; 
+      currCPU = &p; currCPU->toggleState(); 
+      idleCPU = false; 
+   }
+
+   void release_cpu(Process& p) {
+      std::unique_lock<std::mutex> lock(mutex);
+      currCPU->toggleState();
+      dequeue_process(p);
+      schedule_process(); 
+      idleCPU = true;
+      cv.notify_all();
+   }
+
+   void request_io(Process& p) {
+      std::unique_lock<std::mutex> lock(mutex);
+      enqueue_process(p);
+      schedule_io_op();
+      while(!idleIO || p.getPID() != frontIO->getPID()) 
+         cv.wait(lock);
+      currIO = &p; 
+      // currIO->toggleState(); 
+      idleIO = false; 
    }
    
-   void release_cpu() {
+   void release_io(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
-      curr->toggleState();
-      dequeue_process();
-      schedule_process(); 
-      idle = true;
+      // currIO->toggleState();
+      currIO->decrementIOOP();
+      dequeue_process(p);
+      schedule_io_op(); 
+      idleIO = true;
       cv.notify_all();
    }
    
@@ -109,31 +155,47 @@ public:
       for(auto queue : queues) {
          if(!queue->empty()) {
             Process& p = queue->front();
-            front = &p;
+            frontCPU = &p;
             break;
          }
       }
-      if(!front || !curr) return;
-      if(front->getPID() != curr->getPID() && curr->getState()) 
-         curr->toggleState();
+      if(!frontCPU || !currCPU) return;
+      if(frontCPU->getPID() != currCPU->getPID() && currCPU->getState()) 
+         currCPU->toggleState();
+   }
+
+   void schedule_io_op() {
+      if(!queues[3]->empty()) {
+        Process& p = queues[3]->front();
+        frontIO = &p;
+      }
    }
 
    void enqueue_process(Process& p) {
       queues[p.getPriority()]->push(p);
    }   
    
-   void dequeue_process() {
-      queues[curr->getPriority()]->pop(); // TODO: Adicionar lógica para colocar na fila de I/O
-      curr->changePriority();
+   void dequeue_process(Process& p) {
+      queues[p.getPriority()]->pop(); 
+      // Decrementar a prioridade
+      if(p.getTotalTime() < p.getBurst())
+        p.changePriority();
+      // Alocar na fila do dispositivo I/O
+      else if(p.getIOOp()) {
+        p.sendToIO();
+        p.setTotalTime(0);
+      }
+      // Altera a prioridade para -1 para indicar o término do processo
+      else p.setEndPriority();
    }
    
    void preempt(Process& p) {
       std::unique_lock<std::mutex> lock(mutex);
-      idle = true;
-      while(!idle || p.getPID() != front->getPID()) 
+      idleCPU = true;
+      while(!idleCPU || p.getPID() != frontCPU->getPID()) 
          cv.wait(lock);
-      curr = &p; curr->toggleState(); 
-      idle = false; 
+      currCPU = &p; currCPU->toggleState(); 
+      idleCPU = false; 
    }
 
    int getQuantum(int priority) {
@@ -141,30 +203,47 @@ public:
    }
 };
 
+int Process::getTimeSlice() {
+    int timeSlice;
+    int quantum = s->getQuantum(priority);
+    timeSlice = burst > quantum ? quantum : burst;
+    return timeSlice;
+   }
+
 void Process::operator()() {
    s->request_cpu(*this);
    int timeSlice = getTimeSlice();
    while(true) {
       std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
       time_t start = time(0); int dt = 0;
-      while(dt < timeSlice && state) 
+      while(dt < timeSlice && state) {
          dt = time(0) - start;
-      total_time += dt;
+         std::cout << "CPU: " << dt << std::endl;
+      }
+      total_cpu_time += dt;
       clock += dt;
       std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
-      if(total_time == burst) {
-        if(io_op) {
-          // Adicionar à fila do dispositivo
-          // request_io()
-          io_op--;
-          total_time = 0;
-        } 
-        else break;
-      }
-      else
+      if(!state)
         s->preempt(*this);
+      else
+        s->release_cpu(*this);
+      if(priority == 3) io_operation();
    }
-   s->release_cpu();
+}
+
+void Process::io_operation() {
+   s->request_io(*this);
+   while(true) {
+      time_t start = time(0); int dt = 0;
+      // while(dt < 20 && state) 
+      while(dt < 20) {
+        dt = time(0) - start;
+        std::cout << "IO: " << dt << std::endl;
+      }
+      clock += dt;
+      s->release_io(*this);
+      s->request_cpu(*this);
+   }
 }
 
 #endif
@@ -177,11 +256,11 @@ void Process::operator()() {
 
 // 2ª OPÇÃO
   // O processo não é finalizado no primeiro quantum
-  // ?????
+  // release_cpu()
     // Retirar processo da fila atual
     // Realocar na fila seguinte
   // schedule_process()
-    // Marcar o processo como FRONT
+    // Marcar o processo como FRONTCPU
   // request_cpu()
     // Alocar o processo à CPU
   // O processo é finalizado
@@ -192,7 +271,7 @@ void Process::operator()() {
 // 3ª OPÇÃO
   // O processo possui uma operação de I/O
   // O precesso segue a 1ª ou a 2ª OPÇÃO 
-  // ???????
+  // release_cpu()
     // Retirar o processo da fila atual
     // Realocar na fila de I/O
   // request_io()
