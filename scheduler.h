@@ -93,8 +93,8 @@ private:
    std::vector<std::queue<Process>*> queues;
    Process *frontCPU, *currCPU, *frontIO, *currIO;
    bool idleCPU, idleIO;
-   std::mutex mutex;
-   std::condition_variable cv;
+   std::mutex mutexCPU, mutexIO;
+   std::condition_variable cvCPU, cvIO;
    int quantumList[3];
 
 public:
@@ -112,43 +112,41 @@ public:
    }
 
    void request_cpu(Process& p) {
-      std::unique_lock<std::mutex> lock(mutex);
+      std::unique_lock<std::mutex> lock(mutexCPU);
       enqueue_process(p);
       schedule_process();
       while(!idleCPU || p.getPID() != frontCPU->getPID()) 
-         cv.wait(lock);
+         cvCPU.wait(lock);
       currCPU = &p; currCPU->toggleState(); 
       idleCPU = false; 
    }
 
    void release_cpu(Process& p) {
-      std::unique_lock<std::mutex> lock(mutex);
+      std::unique_lock<std::mutex> lock(mutexCPU);
       currCPU->toggleState();
       dequeue_process(p);
       schedule_process(); 
       idleCPU = true;
-      cv.notify_all();
+      cvCPU.notify_all();
    }
 
    void request_io(Process& p) {
-      std::unique_lock<std::mutex> lock(mutex);
+      std::unique_lock<std::mutex> lock(mutexIO);
       enqueue_process(p);
       schedule_io_op();
       while(!idleIO || p.getPID() != frontIO->getPID()) 
-         cv.wait(lock);
+         cvIO.wait(lock);
       currIO = &p; 
-      // currIO->toggleState(); 
       idleIO = false; 
    }
    
    void release_io(Process& p) {
-      std::unique_lock<std::mutex> lock(mutex);
-      // currIO->toggleState();
+      std::unique_lock<std::mutex> lock(mutexIO);
       currIO->decrementIOOP();
       dequeue_process(p);
       schedule_io_op(); 
       idleIO = true;
-      cv.notify_all();
+      cvIO.notify_all();
    }
    
    void schedule_process() {
@@ -190,10 +188,10 @@ public:
    }
    
    void preempt(Process& p) {
-      std::unique_lock<std::mutex> lock(mutex);
+      std::unique_lock<std::mutex> lock(mutexCPU);
       idleCPU = true;
       while(!idleCPU || p.getPID() != frontCPU->getPID()) 
-         cv.wait(lock);
+         cvCPU.wait(lock);
       currCPU = &p; currCPU->toggleState(); 
       idleCPU = false; 
    }
@@ -227,14 +225,16 @@ void Process::operator()() {
       else
         s->release_cpu(*this);
       if(priority == 3) io_operation();
-      if(priority == -1) break;
+
+      if(priority != -1)
+        s->request_cpu(*this);
+      else break;
    }
 }
 
 void Process::io_operation() {
    s->request_io(*this);
       time_t start = time(0); int dt = 0;
-      // while(dt < 20 && state) 
       std::cout <<"I/O #P" << pid << " " << "Start of IO operation" << std::endl;
       while(dt < 20) {
         dt = time(0) - start;
@@ -242,7 +242,6 @@ void Process::io_operation() {
         std::cout <<"I/O #P" << pid << " " << "End of IO operation"  << std::endl;
       clock += dt;
       s->release_io(*this);
-      s->request_cpu(*this);
 }
 
 #endif
