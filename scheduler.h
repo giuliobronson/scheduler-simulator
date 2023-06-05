@@ -14,21 +14,26 @@ long long getCurrentTime() {
     auto current_time = std::chrono::system_clock::now();
     auto duration = current_time.time_since_epoch();
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
-    return milliseconds.count() / 10;
+    return milliseconds.count() / 100; // Ajuste para simulação de tempo
 }
 
 const int inf = std::numeric_limits<int>::max();
 
 class Scheduler;
 
+/*
+* Classe Process simula uma processo 
+* que requisita tempo de CPU
+*/
 class Process {
 private:
    Scheduler* s;
    int pid;
    int priority;
-   bool state;
-   int exec_time, remainder;
-   int time_slice;
+   bool state; // true se processo está tivo
+   int exec_time; // Tempo de execução total
+   int remainder; // Restante de tempo no burst após início de execução
+   int time_slice; // Parcela de tempo designada pelo escalanador ao processo
    int burst;
    int io_op; 
 
@@ -84,16 +89,20 @@ public:
    void operator()();
 };
 
-int Process::s_id = 0;
+int Process::s_id = 0; 
 
+/*
+* Classe IODevice simula a fila de processos
+* esperando operações de I/O em um dispositivo
+*/
 class IODevice {
 private:
-   const int io_time = 20;
+   const int io_time = 20; // Tempo de I/O
    std::queue<Process> processes;
    Process *front;
-   bool idle;
    std::mutex mutex;
    std::condition_variable cv;
+   bool idle; // true se dispositivo está ocioso
 
 public:
    IODevice() : front(nullptr), idle(true) {};
@@ -125,12 +134,12 @@ public:
 
 class Scheduler {
 private:
-   std::vector<std::queue<Process>*> queues;
+   std::vector<std::queue<Process>*> queues; // Filas do escalonador
    IODevice *io;
-   Process *front, *curr;
+   Process *front, *curr; // Processos do início da fila e o que está executando 
    std::mutex mutex;
    std::condition_variable cv;
-   int quantum[3] = { 10, 15, inf };
+   int quantum[3] = { 10, 15, inf }; // Quantum de cada fila
    bool idle;
 
 protected:
@@ -183,7 +192,7 @@ public:
    }   
    
    void dequeueProcess() {
-      queues[curr->getPriority()]->pop(); // TODO: Adicionar lógica para colocar na fila de I/O
+      queues[curr->getPriority()]->pop(); 
       curr->changePriority();
    }
    
