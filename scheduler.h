@@ -10,6 +10,13 @@
 #include <thread>
 #include <algorithm>
 
+long long getCurrentTime() {
+    auto current_time = std::chrono::system_clock::now();
+    auto duration = current_time.time_since_epoch();
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+    return milliseconds.count() / 100;
+}
+
 class Scheduler;
 
 class Process {
@@ -79,7 +86,7 @@ public:
       return this->state;
    }
 
-   int getTimeSlice();
+   void computeTimeSlice();
 
    void operator()();
 
@@ -110,12 +117,12 @@ void request_io(Process& p) {
    }
 
    void exec_io_op(Process& p) {
-      time_t start = time(0)*1000;
-      int dt = 0;
-      std::cout <<"I/O #P" << p.getPID() << " " << "Start of IO operation" << std::endl;
+      long long start = getCurrentTime();
+      long long dt = 0;
+      // std::cout <<"I/O #P" << p.getPID() << " " << "Start of IO operation" << std::endl;
       while(dt < 20)
-        dt = time(0)*1000 - start;
-      std::cout <<"I/O #P" << p.getPID() << " " << "End of IO operation"  << std::endl;
+        dt = getCurrentTime() - start;
+      // std::cout <<"I/O #P" << p.getPID() << " " << "End of IO operation"  << std::endl;
       release_io(p);
    }
    
@@ -140,13 +147,14 @@ private:
    std::mutex mutexCPU;
    std::condition_variable cvCPU;
    int quantumList[3];
+   int timeSlice;
 
    protected:
-   static time_t start_clock;
+   static long long start_clock;
 
 public:
    Scheduler(int firstQuantum, int secondQuantum) : frontCPU(nullptr), currCPU(nullptr), 
-    idleCPU(true) {
+    idleCPU(true), timeSlice(0) {
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=10)
       queues.push_back(new std::queue<Process>); // Round Robin (quantum=15)
       queues.push_back(new std::queue<Process>); // FCFS
@@ -161,8 +169,16 @@ public:
     return deviceIO;
    }
 
+   int getTimeSlice() {
+      return timeSlice;
+   }
+
+   void setTimeSlice(int time) {
+      timeSlice = time;
+   }
+
    int getClock() {
-      return time(0)*1000 - start_clock;
+      return getCurrentTime() - start_clock;
    }
 
    void request_cpu(Process& p) {
@@ -173,6 +189,7 @@ public:
          cvCPU.wait(lock);
       currCPU = &p; currCPU->toggleState(); 
       idleCPU = false; 
+      currCPU->computeTimeSlice();
    }
 
    void release_cpu(Process& p) {
@@ -218,10 +235,12 @@ public:
    void preempt(Process& p) {
       std::unique_lock<std::mutex> lock(mutexCPU);
       idleCPU = true;
+      cvCPU.notify_all();
       while(!idleCPU || p.getPID() != frontCPU->getPID()) 
          cvCPU.wait(lock);
       currCPU = &p; currCPU->toggleState(); 
       idleCPU = false; 
+      
    }
 
    int getQuantum(int priority) {
@@ -229,29 +248,29 @@ public:
    }
 };
 
-time_t Scheduler::start_clock = time(0)*1000;
+long long Scheduler::start_clock = getCurrentTime();
 
 
-int Process::getTimeSlice() {
-    int timeSlice;
+void Process::computeTimeSlice() {
     int quantum = s->getQuantum(priority);
-    timeSlice = std::min(quantum, burst-total_cpu_time);
-    return timeSlice;
+    s->setTimeSlice(std::min(quantum, burst-total_cpu_time));
    }
 
 void Process::operator()() {
    s->request_cpu(*this);
    while(true) {
-      int timeSlice = getTimeSlice();
+      int timeSlice = s->getTimeSlice();
       std::cout << "CPU #P" << pid << " started execution at time " << s->getClock() <<  std::endl;
-      time_t start = time(0)*1000; int dt = 0;
+      long long start = getCurrentTime(); long long dt = 0;
       while(dt < timeSlice && state) {
-         dt = time(0)*1000 - start;
+         dt = getCurrentTime() - start;
       }
       total_cpu_time += dt;
-      std::cout << "CPU #P" << pid << " ended execution at time " << s->getClock() << std::endl;
-      if(!state)
+      std::cout << "CPU #P" << pid << " ended execution at time " << s->getClock() <<std::endl;
+      if(!state) {
         s->preempt(*this);
+        s->setTimeSlice(timeSlice - dt);
+      }
       else
         s->release_cpu(*this);
       if(priority == 3) {
@@ -259,9 +278,9 @@ void Process::operator()() {
         aux->request_io(*this);
       }
 
-      if(priority != -1)
+      if(priority == -1) break;
+      if(!state)
         s->request_cpu(*this);
-      else break;
    }
 }
 
