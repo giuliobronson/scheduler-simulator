@@ -214,36 +214,35 @@ void Process::operator()() {
    s->request_cpu(*this);
    int timeSlice = getTimeSlice();
    while(true) {
-      std::cout << "Process #" << pid << " started execution at time " << clock <<  std::endl;
+      std::cout << "CPU #P" << pid << " started execution at time " << clock <<  std::endl;
       time_t start = time(0); int dt = 0;
       while(dt < timeSlice && state) {
          dt = time(0) - start;
-         std::cout << "CPU: " << dt << std::endl;
       }
       total_cpu_time += dt;
       clock += dt;
-      std::cout << "Process #" << pid << " ended execution at time " << clock << std::endl;
+      std::cout << "CPU #P" << pid << " ended execution at time " << clock << std::endl;
       if(!state)
         s->preempt(*this);
       else
         s->release_cpu(*this);
       if(priority == 3) io_operation();
+      if(priority == -1) break;
    }
 }
 
 void Process::io_operation() {
    s->request_io(*this);
-   while(true) {
       time_t start = time(0); int dt = 0;
       // while(dt < 20 && state) 
+      std::cout <<"I/O #P" << pid << " " << "Start of IO operation" << std::endl;
       while(dt < 20) {
         dt = time(0) - start;
-        std::cout << "IO: " << dt << std::endl;
       }
+        std::cout <<"I/O #P" << pid << " " << "End of IO operation"  << std::endl;
       clock += dt;
       s->release_io(*this);
       s->request_cpu(*this);
-   }
 }
 
 #endif
