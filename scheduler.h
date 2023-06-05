@@ -222,6 +222,7 @@ void Process::operator()() {
       consumeTime(dt);
       std::cout << "Process #" << pid << " ended execution at time   " << s->getClock() << std::endl;
       if(state) break;
+      setTimeSlice(time_slice - dt);
       s->preempt(*this);
    }
    s->releaseCPU();
